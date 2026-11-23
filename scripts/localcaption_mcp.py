@@ -71,7 +71,7 @@ def iniciar_transcricao(
     max_blocks: int = 0,
     resume_run_id: int | None = None,
 ) -> dict[str, str | int | bool | None]:
-    """Start a Portuguese transcription on GitHub and return its run ID. Pass an HTTPS direct download URL or leave it empty to use the repository's STT_AUDIO_URL. For a benchmark, set max_blocks to 1. To resume, supply the prior run ID, same source and model."""
+    """Start a Portuguese transcription on GitHub and return its run ID. Pass a YouTube video URL or a direct HTTPS download URL or leave it empty to use the repository's STT_AUDIO_URL. For a benchmark, set max_blocks to 1. To resume, supply the prior run ID, same source and model."""
     if max_blocks < 0 or (resume_run_id is not None and resume_run_id < 1):
         raise ValueError("max_blocks deve ser >= 0 e resume_run_id deve ser positivo.")
     inputs = {"model": model, "max_blocks": str(max_blocks)}

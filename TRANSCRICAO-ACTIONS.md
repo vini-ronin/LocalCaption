@@ -86,7 +86,9 @@ ID. Depois consulte o ID e me passe o SRT quando estiver pronto.”
 - **ler_transcricao** devolve uma página do texto ou SRT e o link do artefato
   completo. Para um arquivo longo, prefira baixar o artefato inteiro.
 
-O MCP aceita links de download direto. Para arquivos do PC, envie primeiro
+O MCP aceita links de download direto e v?deos p?blicos do YouTube.
+Se o YouTube exigir login ou verifica??o no runner, use um link direto do arquivo.
+Para arquivos do PC, envie primeiro
 para um armazenamento que forneça um link HTTPS. Em repositório público,
 trate a transcrição nos artefatos como pública.
 
