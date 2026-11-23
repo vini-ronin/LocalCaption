@@ -3,6 +3,7 @@
 from io import BytesIO
 import logging
 import os
+from time import sleep
 from typing import Literal
 from urllib.parse import urlsplit
 from zipfile import ZipFile
@@ -44,7 +45,15 @@ def checked(response):
 
 
 def transcription_run(client, run_id):
-    run = checked(client.get(f"actions/runs/{run_id}"))
+    url = f"actions/runs/{run_id}"
+    response = client.get(url)
+    # GitHub may return a run ID just before the run is visible to reads.
+    for delay in (1, 2, 4):
+        if response.status_code != 404:
+            break
+        sleep(delay)
+        response = client.get(url)
+    run = checked(response)
     if run["path"].split("@", 1)[0] != f".github/workflows/{WORKFLOW}":
         raise ValueError("O ID informado não pertence ao workflow de transcrição.")
     return run
@@ -55,13 +64,13 @@ def artifacts_for(client, run_id):
     return {artifact["name"]: artifact for artifact in response["artifacts"] if not artifact["expired"]}
 
 
-@mcp.tool()
+@mcp.tool(structured_output=True)
 def iniciar_transcricao(
     audio_url: str = "",
     model: Literal["small", "medium", "large-v3-turbo"] = "small",
     max_blocks: int = 0,
     resume_run_id: int | None = None,
-) -> dict:
+) -> dict[str, str | int | bool | None]:
     """Start a Portuguese transcription on GitHub and return its run ID. Pass an HTTPS direct download URL or leave it empty to use the repository's STT_AUDIO_URL. For a benchmark, set max_blocks to 1. To resume, supply the prior run ID, same source and model."""
     if max_blocks < 0 or (resume_run_id is not None and resume_run_id < 1):
         raise ValueError("max_blocks deve ser >= 0 e resume_run_id deve ser positivo.")
@@ -90,8 +99,8 @@ def iniciar_transcricao(
     return {"run_id": run_id, "url": f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"}
 
 
-@mcp.tool()
-def consultar_transcricao(run_id: int) -> dict:
+@mcp.tool(structured_output=True)
+def consultar_transcricao(run_id: int) -> dict[str, str | int | bool | None]:
     """Check whether the transcription is queued, running, incomplete or ready. A completed run without the transcricao artifact can be resumed if blocos-stt is available."""
     with github() as client:
         run = transcription_run(client, run_id)
@@ -107,10 +116,10 @@ def consultar_transcricao(run_id: int) -> dict:
     }
 
 
-@mcp.tool()
+@mcp.tool(structured_output=True)
 def ler_transcricao(
     run_id: int, formato: Literal["txt", "srt"] = "txt", inicio: int = 0, limite: int = 100
-) -> dict:
+) -> dict[str, str | int | bool | None]:
     """Read a page of TXT or SRT lines from a completed transcription. To read the next page use proximo_inicio. The returned GitHub URL also lets the user download the original artifact."""
     if inicio < 0 or not 1 <= limite <= 200:
         raise ValueError("Use inicio >= 0 e limite entre 1 e 200.")
