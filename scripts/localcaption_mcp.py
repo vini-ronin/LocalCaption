@@ -104,7 +104,7 @@ def consultar_transcricao(run_id: int) -> dict[str, str | int | bool | None]:
     """Check whether the transcription is queued, running, incomplete or ready. A completed run without the transcricao artifact can be resumed if blocos-stt is available."""
     with github() as client:
         run = transcription_run(client, run_id)
-        artifacts = artifacts_for(client, run_id)
+        artifacts = artifacts_for(client, run_id) if run["status"] == "completed" else {}
     ready = "transcricao" in artifacts
     return {
         "run_id": run_id,
