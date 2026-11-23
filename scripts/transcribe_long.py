@@ -45,20 +45,28 @@ def main():
     parts.mkdir(parents=True, exist_ok=True)
     manifest = args.output / "manifest.json"
     settings = {
-        "version": 1, "source_sha256": digest, "model": args.model,
+        "version": 2, "source_sha256": digest, "model": args.model,
         "language": "pt", "block_seconds": args.block_seconds,
     }
     if manifest.exists():
-        if json.loads(manifest.read_text(encoding="utf-8")) != settings:
+        saved = json.loads(manifest.read_text(encoding="utf-8"))
+        if saved.get("version") not in (1, 2) or {**saved, "version": 2} != settings:
             parser.error("The checkpoint belongs to a different audio file or model")
     elif any(parts.glob("*.json")):
         parser.error("The checkpoint is missing its manifest")
-    else:
-        write_json(manifest, settings)
+    write_json(manifest, settings)
 
     total = math.ceil(duration / args.block_seconds)
     paths = [parts / f"{index + 1:05d}.json" for index in range(total)]
-    pending = [(index, path) for index, path in enumerate(paths) if not path.exists()]
+    blocks = {
+        path: json.loads(path.read_text(encoding="utf-8"))
+        for path in paths if path.exists()
+    }
+    # Older artifacts have segment times only. Regenerate those blocks when resumed.
+    pending = [
+        (index, path) for index, path in enumerate(paths)
+        if path not in blocks or any("words" not in row for row in blocks[path])
+    ]
     started = monotonic()
     if pending:
         model = require_faster_whisper()(args.model, device="cpu", compute_type="int8")
@@ -79,23 +87,36 @@ def main():
                 with wave.open(str(wav), "rb") as decoded:
                     samples = np.frombuffer(decoded.readframes(decoded.getnframes()), dtype="<i2")
                 pcm = samples.astype(np.float32) / 32768
-                segments, _ = model.transcribe(pcm, language="pt", vad_filter=True)
+                segments, _ = model.transcribe(
+                    pcm, language="pt", vad_filter=True, word_timestamps=True
+                )
                 rows = [
-                    {"start": offset + s.start, "end": offset + s.end, "text": s.text}
-                    for s in segments
+                    {
+                        "start": offset + segment.start,
+                        "end": offset + segment.end,
+                        "text": segment.text,
+                        "words": [
+                            {
+                                "word": word.word,
+                                "start": offset + word.start,
+                                "end": offset + word.end,
+                            }
+                            for word in (segment.words or [])
+                        ],
+                    }
+                    for segment in segments
                 ]
             write_json(path, rows)
+            blocks[path] = rows
             print(f"Block {index + 1}/{total}: {monotonic() - block_started:.1f}s", flush=True)
 
-    missing = sum(not path.exists() for path in paths)
-    print(f"Completed blocks: {total - missing}/{total}", flush=True)
-    if missing:
+    complete = sum(path in blocks and all("words" in row for row in blocks[path]) for path in paths)
+    print(f"Completed blocks: {complete}/{total}", flush=True)
+    if complete < total:
         return
-    segments = [
-        SimpleNamespace(**row)
-        for path in paths
-        for row in json.loads(path.read_text(encoding="utf-8"))
-    ]
+    rows = [row for path in paths for row in blocks[path]]
+    write_json(args.output / "palavras.json", {"version": 1, "language": "pt", "segments": rows})
+    segments = [SimpleNamespace(**row) for row in rows]
     (args.output / "transcricao.srt").write_text(_to_srt(segments), encoding="utf-8")
     (args.output / "transcricao.txt").write_text(
         "\n".join(segment.text.strip() for segment in segments) + "\n", encoding="utf-8"

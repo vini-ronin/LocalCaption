@@ -84,7 +84,7 @@ jobs:
             resultado/manifest.json
             resultado/blocks/*.json
           retention-days: 7
-      - name: Disponibilizar SRT e TXT
+      - name: Disponibilizar SRT, TXT e tempos por palavra
         if: success() && hashFiles('resultado/transcricao.srt') != ''
         uses: actions/upload-artifact@v7
         with:
@@ -92,4 +92,5 @@ jobs:
           path: |
             resultado/transcricao.srt
             resultado/transcricao.txt
+            resultado/palavras.json
           retention-days: 7
