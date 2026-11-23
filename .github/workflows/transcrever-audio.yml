@@ -1,0 +1,89 @@
+name: Transcrever áudio longo
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Modelo Whisper
+        type: choice
+        options: [small, medium, large-v3-turbo]
+        default: small
+      max_blocks:
+        description: Máximo de blocos novos de 30 min (0 = todos, 1 = teste)
+        type: number
+        default: 0
+      resume_run_id:
+        description: ID da execução anterior para retomar (opcional)
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  transcribe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: whisper-model-v1-${{ runner.os }}-${{ inputs.model }}
+      - name: Instalar dependências
+        run: |
+          python -m pip install '.[faster]'
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Recuperar blocos da execução anterior
+        if: inputs.resume_run_id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: blocos-stt
+          path: resultado
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.resume_run_id }}
+      - name: Baixar áudio
+        env:
+          AUDIO_URL: ${{ secrets.STT_AUDIO_URL }}
+        run: |
+          if [[ -z "$AUDIO_URL" ]]; then
+            echo "::error::Configure o secret STT_AUDIO_URL com o link HTTPS de download."
+            exit 1
+          fi
+          if ! curl --fail --silent --location --proto '=https' --proto-redir '=https' \
+              --connect-timeout 30 --max-time 1200 --output "$RUNNER_TEMP/stt-input.media" -- "$AUDIO_URL"; then
+            echo "::error::Não consegui baixar o áudio. Verifique o link HTTPS e a validade dele."
+            exit 1
+          fi
+      - name: Transcrever
+        timeout-minutes: 320
+        env:
+          MODEL: ${{ inputs.model }}
+          MAX_BLOCKS: ${{ inputs.max_blocks }}
+        run: |
+          python -u scripts/transcribe_long.py "$RUNNER_TEMP/stt-input.media" \
+            --output resultado --model "$MODEL" --max-blocks "$MAX_BLOCKS"
+      - name: Guardar os blocos concluídos
+        if: always() && hashFiles('resultado/manifest.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: blocos-stt
+          path: |
+            resultado/manifest.json
+            resultado/blocks/*.json
+          retention-days: 7
+      - name: Disponibilizar SRT e TXT
+        if: success() && hashFiles('resultado/transcricao.srt') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: transcricao
+          path: |
+            resultado/transcricao.srt
+            resultado/transcricao.txt
+          retention-days: 7
