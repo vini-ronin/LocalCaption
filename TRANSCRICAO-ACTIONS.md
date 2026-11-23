@@ -41,3 +41,57 @@ no secret desde que ele continue entregando exatamente o mesmo arquivo.
 
 Se um lote estiver chegando ao limite de execução, use um valor menor em
 **max_blocks**. Para trocar de arquivo ou modelo, deixe **resume_run_id** vazio.
+
+## Usar pela IA com MCP
+
+O cliente MCP só aciona e consulta o GitHub. A transcrição roda nos runners e
+continua mesmo se você fechar a IA depois de receber o ID.
+
+1. Crie um [token fine-grained](https://github.com/settings/personal-access-tokens/new)
+   limitado ao repositório **vini-ronin/LocalCaption** com permissão
+   **Actions: Read and write**. Configure-o no ambiente do cliente MCP como
+   **LOCALCAPTION_GITHUB_TOKEN**.
+2. Para a IA poder enviar um link diferente por tarefa, gere uma chave:
+
+   ```powershell
+   uv run --no-project --with-requirements requirements-mcp.txt python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+   Guarde o mesmo valor como **STT_INPUT_KEY** em dois lugares: nos secrets de
+   Actions do repo e no ambiente do cliente MCP. O link vai criptografado
+   no disparo do workflow. Se você preferir usar só o link pré-configurado via
+   **STT_AUDIO_URL**, pode pular este passo e pedir à IA para deixar
+   `audio_url` vazio.
+3. Cadastre um servidor MCP **stdio**, com comando `uv` e os argumentos abaixo.
+   Use o caminho absoluto do clone e injete as variáveis acima pelo mecanismo
+   de segredos ou configuração privada do seu cliente.
+
+   ```json
+   {
+     "command": "uv",
+     "args": [
+       "run", "--no-project", "--with-requirements",
+       "C:/Users/viniandrade/Documents/ViniProject/pesquisas/stt-repos/localcaption/requirements-mcp.txt",
+       "python",
+       "C:/Users/viniandrade/Documents/ViniProject/pesquisas/stt-repos/localcaption/scripts/localcaption_mcp.py"
+     ]
+   }
+   ```
+
+Peça, por exemplo: “Inicie a transcrição deste link em português e me dê o
+ID. Depois consulte o ID e me passe o SRT quando estiver pronto.”
+
+- **iniciar_transcricao** devolve o ID da execução sem esperar o áudio inteiro.
+- **consultar_transcricao** informa o estado, se há resultado e se dá para retomar.
+- **ler_transcricao** devolve uma página do texto ou SRT e o link do artefato
+  completo. Para um arquivo longo, prefira baixar o artefato inteiro.
+
+O MCP aceita links de download direto. Para arquivos do PC, envie primeiro
+para um armazenamento que forneça um link HTTPS. Em repositório público,
+trate a transcrição nos artefatos como pública.
+
+Para integrar sem MCP, use a
+[REST API de Actions](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)
+com a versão `2026-03-10`. Dispare `transcrever-audio.yml` na branch `main` e
+use o `workflow_run_id` retornado para consultar o job e seus artefatos. Deixe
+`encrypted_source` de fora para usar o secret já configurado no repo.
